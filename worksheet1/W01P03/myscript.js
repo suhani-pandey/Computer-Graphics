@@ -1,17 +1,6 @@
 "use strict";
 window.onload = function() { main(); }
 
-function add_point(positions, center, halfSize)
-{
-positions.push(vec2(center[0] - halfSize, center[1] - halfSize));
-positions.push(vec2(center[0] + halfSize, center[1] - halfSize));
-positions.push(vec2(center[0] + halfSize, center[1] + halfSize));
-
-positions.push(vec2(center[0] - halfSize, center[1] - halfSize));
-positions.push(vec2(center[0] + halfSize, center[1] + halfSize));
-positions.push(vec2(center[0] - halfSize, center[1] + halfSize));
-}
-
 async function main()
 {
 const gpu = navigator.gpu;
@@ -25,11 +14,9 @@ device: device,
 format: canvasFormat,
 });
 
-const point_size = 10*(2/canvas.height);
-var positions = [];
-add_point(positions, vec2(1.0, 1.0), point_size);
-add_point(positions, vec2(0.0, 0.0), point_size);
-add_point(positions, vec2(1.0, 0.0), point_size);
+const positions = [ vec2(1.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 0.0) ];
+const colors = [ vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0) ];
+
 const positionBuffer = device.createBuffer({
 size: flatten(positions).byteLength,
 usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -44,6 +31,20 @@ shaderLocation: 0, // Position, see vertex shader
 }],
 };
 
+const colorBuffer = device.createBuffer({
+size: flatten(colors).byteLength,
+usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+});
+device.queue.writeBuffer(colorBuffer, /*bufferOffset=*/0, flatten(colors));
+const colorBufferLayout = {
+arrayStride: sizeof['vec3'],
+attributes: [{
+format: 'float32x3',
+offset: 0,
+shaderLocation: 1, // Color, see vertex shader
+}],
+};
+
 const shaderCode = await fetch('shader.wgsl').then(response => response.text());
 const shaderModule = device.createShaderModule({
 code: shaderCode,
@@ -54,7 +55,7 @@ layout: 'auto',
 vertex: {
   module: shaderModule,
   entryPoint: 'vertexMain',
-  buffers: [positionBufferLayout],
+  buffers: [positionBufferLayout, colorBufferLayout],
 },
 fragment: {
   module: shaderModule,
@@ -76,6 +77,7 @@ const pass = encoder.beginRenderPass({
 
 pass.setPipeline(pipeline);
 pass.setVertexBuffer(0, positionBuffer);
+pass.setVertexBuffer(1, colorBuffer);
 pass.draw(positions.length);
 pass.end();
 

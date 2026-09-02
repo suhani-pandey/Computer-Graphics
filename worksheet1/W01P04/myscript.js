@@ -1,17 +1,6 @@
 "use strict";
 window.onload = function() { main(); }
 
-function add_point(positions, center, halfSize)
-{
-positions.push(vec2(center[0] - halfSize, center[1] - halfSize));
-positions.push(vec2(center[0] + halfSize, center[1] - halfSize));
-positions.push(vec2(center[0] + halfSize, center[1] + halfSize));
-
-positions.push(vec2(center[0] - halfSize, center[1] - halfSize));
-positions.push(vec2(center[0] + halfSize, center[1] + halfSize));
-positions.push(vec2(center[0] - halfSize, center[1] + halfSize));
-}
-
 async function main()
 {
 const gpu = navigator.gpu;
@@ -25,11 +14,11 @@ device: device,
 format: canvasFormat,
 });
 
-const point_size = 10*(2/canvas.height);
-var positions = [];
-add_point(positions, vec2(1.0, 1.0), point_size);
-add_point(positions, vec2(0.0, 0.0), point_size);
-add_point(positions, vec2(1.0, 0.0), point_size);
+// Unit quad (width 1, height 1) centered at the origin, two triangles.
+const positions = [
+vec2(-0.5, -0.5), vec2(0.5, -0.5), vec2(0.5, 0.5),
+vec2(-0.5, -0.5), vec2(0.5, 0.5), vec2(-0.5, 0.5),
+];
 const positionBuffer = device.createBuffer({
 size: flatten(positions).byteLength,
 usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -43,6 +32,12 @@ offset: 0,
 shaderLocation: 0, // Position, see vertex shader
 }],
 };
+
+// Uniform buffer holding the current rotation angle (padded to 16 bytes).
+const uniformBuffer = device.createBuffer({
+size: 16,
+usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+});
 
 const shaderCode = await fetch('shader.wgsl').then(response => response.text());
 const shaderModule = device.createShaderModule({
@@ -63,7 +58,21 @@ fragment: {
 },
 });
 
-// Create a render pass in a command buffer and submit it
+const bindGroup = device.createBindGroup({
+layout: pipeline.getBindGroupLayout(0),
+entries: [{
+  binding: 0,
+  resource: { buffer: uniformBuffer },
+}],
+});
+
+const rotationsPerSecond = 0.2;
+
+function render(timeMilliseconds)
+{
+const angle = timeMilliseconds * 0.001 * rotationsPerSecond * 2 * Math.PI;
+device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([angle]));
+
 const encoder = device.createCommandEncoder();
 const pass = encoder.beginRenderPass({
   colorAttachments: [{
@@ -75,10 +84,14 @@ const pass = encoder.beginRenderPass({
 });
 
 pass.setPipeline(pipeline);
+pass.setBindGroup(0, bindGroup);
 pass.setVertexBuffer(0, positionBuffer);
 pass.draw(positions.length);
 pass.end();
 
-const commandBuffer = encoder.finish();
-device.queue.submit([commandBuffer]);
+device.queue.submit([encoder.finish()]);
+requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
 }
