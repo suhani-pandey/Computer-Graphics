@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Computer Graphics — suhani-pandey</title>
+<style>
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #d4d4d4;
+  background: #1e1e1e;
+}
+#app {
+  display: flex;
+  height: 100%;
+}
+#sidebar {
+  width: 320px;
+  min-width: 220px;
+  max-width: 60%;
+  overflow-y: auto;
+  background: #252526;
+  border-right: 1px solid #3c3c3c;
+  padding: 12px 0;
+  flex-shrink: 0;
+}
+#sidebar h1 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #bbbbbb;
+  margin: 0 0 8px 16px;
+}
+#sidebar .repo-link {
+  display: block;
+  margin: 0 16px 14px 16px;
+  font-size: 12px;
+  color: #6ea8fe;
+  text-decoration: none;
+}
+#sidebar .repo-link:hover { text-decoration: underline; }
+#tree { font-size: 13px; }
+#tree ul { list-style: none; margin: 0; padding-left: 16px; }
+#tree > ul { padding-left: 0; }
+#tree details > summary {
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  user-select: none;
+}
+#tree details > summary:hover { background: #2a2d2e; }
+#tree details > summary::-webkit-details-marker { display: none; }
+#tree summary .icon { margin-right: 6px; }
+#tree .file {
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: #d4d4d4;
+  text-decoration: none;
+}
+#tree .file:hover { background: #2a2d2e; }
+#tree .file.active { background: #37373d; }
+#tree .file .icon { margin-right: 6px; opacity: 0.8; }
+#tree .file.html-file { color: #4ec9b0; }
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#filebar {
+  padding: 10px 18px;
+  border-bottom: 1px solid #3c3c3c;
+  font-size: 13px;
+  color: #9d9d9d;
+  background: #1e1e1e;
+  flex-shrink: 0;
+}
+#filebar strong { color: #d4d4d4; }
+#content {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+#content pre {
+  margin: 0;
+  padding: 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#welcome {
+  padding: 40px;
+  max-width: 640px;
+  color: #9d9d9d;
+  font-size: 14px;
+  line-height: 1.6;
+}
+#welcome h2 { color: #d4d4d4; }
+#welcome code {
+  background: #2d2d2d;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12.5px;
+}
+.status { padding: 18px; color: #9d9d9d; font-size: 13px; }
+.status.error { color: #f14c4c; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>Computer Graphics</h1>
+    <a class="repo-link" href="https://github.com/suhani-pandey/Computer-Graphics" target="_blank">View repository on GitHub &rarr;</a>
+    <div id="tree"><div class="status">Loading file tree…</div></div>
+  </div>
+  <div id="main">
+    <div id="filebar">Select a file on the left to view its source. Click an <strong>.html</strong> file to run it.</div>
+    <div id="content">
+      <div id="welcome">
+        <h2>DTU 02561 — Computer Graphics</h2>
+        <p>Browse the folder structure on the left, same as a code editor.</p>
+        <p>Click any source file (<code>.js</code>, <code>.wgsl</code>, <code>.py</code>, <code>.md</code>, …) to read its code here.</p>
+        <p>Click an <code>.html</code> file to open and run it in a new tab — that's where the WebGPU graphics render.</p>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const REPO = "suhani-pandey/Computer-Graphics";
+const BRANCH = "main";
+
+const TEXT_EXTENSIONS = new Set(["js", "wgsl", "py", "md", "json", "txt", "css", "html", "gitignore"]);
+
+function iconFor(name, isDir) {
+  if (isDir) return "\u{1F4C1}"; // folder
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  if (ext === "html") return "\u{1F310}"; // globe, run-able
+  if (ext === "js") return "\u{1F4DC}";
+  if (ext === "wgsl") return "\u{1F3A8}";
+  if (ext === "py") return "\u{1F40D}";
+  if (ext === "md") return "\u{1F4DD}";
+  if (ext === "pdf") return "\u{1F4C4}";
+  return "\u{1F4C4}";
+}
+
+function buildTree(flatItems) {
+  const root = { name: "", type: "tree", children: {}, path: "" };
+  for (const item of flatItems) {
+    const parts = item.path.split("/");
+    if (parts.some(p => p.startsWith("."))) continue; // hide dotfiles/dotfolders
+    let node = root;
+    parts.forEach((part, i) => {
+      const isLast = i === parts.length - 1;
+      if (!node.children[part]) {
+        node.children[part] = {
+          name: part,
+          type: isLast ? item.type : "tree",
+          path: parts.slice(0, i + 1).join("/"),
+          children: {},
+        };
+      }
+      node = node.children[part];
+    });
+  }
+  return root;
+}
+
+function sortedEntries(node) {
+  const entries = Object.values(node.children);
+  entries.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "tree" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return entries;
+}
+
+function renderNode(node, container, depth) {
+  const ul = document.createElement("ul");
+  for (const entry of sortedEntries(node)) {
+    const li = document.createElement("li");
+    if (entry.type === "tree") {
+      const details = document.createElement("details");
+      details.open = depth < 1;
+      const summary = document.createElement("summary");
+      summary.innerHTML = `<span class="icon">${iconFor(entry.name, true)}</span>${entry.name}`;
+      details.appendChild(summary);
+      renderNode(entry, details, depth + 1);
+      li.appendChild(details);
+    } else {
+      const ext = entry.name.includes(".") ? entry.name.split(".").pop().toLowerCase() : "";
+      const a = document.createElement("a");
+      a.className = "file" + (ext === "html" ? " html-file" : "");
+      a.href = entry.path;
+      a.innerHTML = `<span class="icon">${iconFor(entry.name, false)}</span>${entry.name}`;
+      if (ext === "html") {
+        a.target = "_blank";
+        a.rel = "noopener";
+      } else {
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          document.querySelectorAll("#tree .file.active").forEach(el => el.classList.remove("active"));
+          a.classList.add("active");
+          openFile(entry.path, ext);
+        });
+      }
+      li.appendChild(a);
+    }
+    ul.appendChild(li);
+  }
+  container.appendChild(ul);
+}
+
+async function openFile(path, ext) {
+  const filebar = document.getElementById("filebar");
+  const content = document.getElementById("content");
+  filebar.innerHTML = `<strong>${path}</strong>`;
+
+  if (!TEXT_EXTENSIONS.has(ext)) {
+    content.innerHTML = `<div class="welcome"><p>Can't preview this file type inline.</p><p><a href="${path}" target="_blank" style="color:#6ea8fe">Open ${path} in a new tab &rarr;</a></p></div>`;
+    return;
+  }
+
+  content.innerHTML = `<div class="status">Loading…</div>`;
+  try {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    const pre = document.createElement("pre");
+    pre.textContent = text;
+    content.innerHTML = "";
+    content.appendChild(pre);
+  } catch (err) {
+    content.innerHTML = `<div class="status error">Failed to load ${path}: ${err.message}</div>`;
+  }
+}
+
+async function init() {
+  const treeEl = document.getElementById("tree");
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/git/trees/${BRANCH}?recursive=1`);
+    if (!res.ok) throw new Error("GitHub API returned " + res.status);
+    const data = await res.json();
+    const root = buildTree(data.tree);
+    treeEl.innerHTML = "";
+    renderNode(root, treeEl, 0);
+  } catch (err) {
+    treeEl.innerHTML = `<div class="status error">Failed to load file tree: ${err.message}</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
